@@ -1,9 +1,8 @@
 from datetime import datetime
 from logging import Logger
-from uuid import UUID
+from typing import Dict, List
 from lib.kafka_connect import KafkaConsumer
-from cdm_loader.repository import CdmRepository
-from cdm_loader.repository import OrderCdmBuilder
+from cdm_loader.repository import CdmRepository, OrderCdmBuilder
 
 
 class CdmMessageProcessor:
@@ -15,8 +14,7 @@ class CdmMessageProcessor:
                 logger: Logger) -> None:
         self._logger = logger
         self._consumer = consumer
-        self._cdm_repository = cdm_repository
-        self._orders_builder = orders_builder
+        self._repository = cdm_repository
         self._batch_size = batch_size
 
     def run(self) -> None:
@@ -28,9 +26,18 @@ class CdmMessageProcessor:
                 break
             self._logger.info(f"{datetime.utcnow()}: Message received")
 
-            order = self._orders_builder(msg)
+            order_dict = msg['payload']
 
-            [self._cdm_repository.user_category_counters_insert(x) for x in order.user_category_counters()]
-            [self._cdm_repository.user_product_counters_insert(x) for x in order.user_product_counters()]
+            builder = OrderCdmBuilder(order_dict)
+
+            self._load_reports(builder)
+
+            self._logger.info(f"{datetime.utcnow()}: {dst_msg}")
 
         self._logger.info(f"{datetime.utcnow()}: FINISH")
+    
+    def _load_reports(self, builder: OrderCdmBuilder) -> None:
+        for p in builder.user_category_counters():
+            self._repository.user_category_counters_insert(p)
+        for p in builder.user_product_counters():
+            self._repository.user_product_counters_insert(p)
